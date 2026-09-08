@@ -18,6 +18,10 @@ return new class extends Migration
     {
         // On vérifie d'abord si la colonne est encore un boolean
         // Si la migration précédente a déjà changé le type, cette migration est idempotente
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         Schema::table('medecins', function (Blueprint $table) {
             $table->string('disponibilite')->nullable()->change();
         });

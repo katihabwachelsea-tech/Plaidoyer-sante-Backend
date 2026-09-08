@@ -11,8 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         Schema::table('medecins', function (Blueprint $table) {
-           // On change le type de tinyint vers string
            $table->string('disponibilite')->nullable()->change();
         });
     }

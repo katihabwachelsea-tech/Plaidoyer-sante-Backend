@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('hopital')->nullable();
             $table->text('biographie')->nullable();
             //  Disponibilité du médecin (Pour apparaître dans la liste)
-            $table->boolean('disponibilite')->default(false);
+            $table->string('disponibilite')->nullable();
             //  Approbation de l'admin (Indispensable pour la sécurité)
             $table->boolean('is_validated')->default(false);
             $table->timestamps();

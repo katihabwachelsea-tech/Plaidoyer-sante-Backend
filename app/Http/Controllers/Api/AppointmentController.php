@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
+use App\Models\Creneau;
 use App\Models\Invoice;
 use App\Models\Service;
 use App\Models\Medecin;
@@ -93,7 +94,7 @@ class AppointmentController extends Controller
         $user = $request->user();
 
         if ($user->role === 'medecin') {
-            $query = Appointment::with(['service', 'patient.user'])
+            $query = Appointment::with(['service', 'patient.user', 'invoice'])
                 ->where('medecin_id', $user->id)
                 ->where('statut', 'Confirme')
                 ->orderBy('date_rdv', 'asc');
@@ -168,6 +169,47 @@ class AppointmentController extends Controller
     }
 
     /**
+     * POST /api/medecin/appointments/{id}/cancel
+     */
+    public function cancelByMedecin(Request $request, $id)
+    {
+        $user = $request->user();
+        if ($user->role !== 'medecin') {
+            return response()->json(['status' => false, 'message' => 'Accès réservé aux médecins.'], 403);
+        }
+
+        $appointment = Appointment::where('id', $id)
+            ->where('medecin_id', $user->id)
+            ->first();
+
+        if (!$appointment) {
+            return response()->json(['status' => false, 'message' => 'Rendez-vous introuvable.'], 404);
+        }
+
+        if ($appointment->statut !== 'Confirme') {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Seul un rendez-vous confirmé peut être annulé.',
+            ], 422);
+        }
+
+        $appointment->update(['statut' => 'Annule']);
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Rendez-vous annulé.',
+        ]);
+    }
+
+    /**
+     * GET /api/patient/doctors/{id}/slots/{date}
+     */
+    public function patientSlots(Request $request, $id, $date)
+    {
+        return $this->getAvailableSlots($request, $id, $date);
+    }
+
+    /**
  * Récupérer les créneaux disponibles pour un médecin à une date donnée
  */
 public function getAvailableSlots(Request $request, $medecin_id, $date)
@@ -187,13 +229,6 @@ public function getAvailableSlots(Request $request, $medecin_id, $date)
     $medecinId = $request->medecin_id;
     $date = $request->date; // Format Y-m-d
 
-    // 1. Définir la plage horaire (On peut imaginer 08:00 à 17:00 par défaut)
-    $startWork = Carbon::parse($date . ' 08:00:00');
-    $endWork   = Carbon::parse($date . ' 17:00:00');
-    $interval  = 45; // Minutes
-
-    // 2. Récupérer les RDV déjà réservés pour ce jour-là
-    // On considère un créneau pris s'il est "Confirme" ou "En_attente"
     $appointments = Appointment::where('medecin_id', $medecinId)
         ->whereDate('date_rdv', $date)
         ->whereIn('statut', ['Confirme', 'En_attente'])
@@ -203,22 +238,38 @@ public function getAvailableSlots(Request $request, $medecin_id, $date)
         })
         ->toArray();
 
+    $published = Creneau::where('medecin_id', $medecinId)
+        ->whereDate('date', $date)
+        ->where('disponible', true)
+        ->orderBy('heure_debut')
+        ->get();
+
     $slots = [];
-    $current = $startWork;
 
-    // 3. Générer les créneaux
-    while ($current->copy()->addMinutes($interval) <= $endWork) {
-        $time = $current->format('H:i');
-        
-        // Vérifier si le créneau est passé (si on regarde pour "aujourd'hui")
-        $isPast = $current->isPast();
+    if ($published->isNotEmpty()) {
+        foreach ($published as $creneau) {
+            $time = substr((string) $creneau->heure_debut, 0, 5);
+            $slotAt = Carbon::parse($date . ' ' . $time);
+            $slots[] = [
+                'time'       => $time,
+                'available'  => !in_array($time, $appointments, true) && !$slotAt->isPast(),
+                'creneau_id' => $creneau->id,
+            ];
+        }
+    } else {
+        $startWork = Carbon::parse($date . ' 08:00:00');
+        $endWork   = Carbon::parse($date . ' 17:00:00');
+        $interval  = 45;
+        $current = $startWork;
 
-        $slots[] = [
-            'time'      => $time,
-            'available' => !in_array($time, $appointments) && !$isPast,
-        ];
-
-        $current->addMinutes($interval);
+        while ($current->copy()->addMinutes($interval) <= $endWork) {
+            $time = $current->format('H:i');
+            $slots[] = [
+                'time'      => $time,
+                'available' => !in_array($time, $appointments, true) && !$current->isPast(),
+            ];
+            $current->addMinutes($interval);
+        }
     }
 
     return response()->json([

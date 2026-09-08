@@ -45,7 +45,7 @@ class ConsultationController extends Controller
         $consultation = Consultation::create([
             'appointment_id'    => $validated['appointment_id'],
             'diagnostic'        => $validated['diagnostic'],
-            'ordonnance'        => $validated['ordonnance'] ?? $request->ordonnance,
+            'ordonnance'        => $validated['ordonnance'] ?? $request->ordonnance ?? '',
             // 'notes' de Flutter est stocké dans conseils_ia (champ libre médecin)
             'conseils_ia'       => $request->notes ?? $request->conseils_ia,
             'date_consultation' => now(),

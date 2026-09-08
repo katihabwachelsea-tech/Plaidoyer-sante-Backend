@@ -17,6 +17,9 @@ use App\Http\Controllers\Api\CreneauController;
 use App\Http\Controllers\Api\MedecinPatientController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\SpecialiteController;
+use App\Http\Controllers\Api\PatientAppointmentController;
+use App\Http\Controllers\Api\PatientProfileController;
+use App\Http\Controllers\Api\MedecinDashboardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -65,6 +68,7 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::get('/medecin/profile', [MedecinProfileController::class, 'show']);
     Route::put('/medecin/profile', [MedecinProfileController::class, 'update']);
+    Route::get('/medecin/dashboard', [MedecinDashboardController::class, 'show']);
 
     // Mise à jour via l'ancienne route (rétro-compatibilité)
     Route::put('/medecin/update', [MedecinController::class, 'update']);
@@ -108,6 +112,7 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::get('/medecin/appointments/today-count', [AppointmentController::class, 'todayCount']);
     Route::get('/medecin/appointments',             [AppointmentController::class, 'index']);
+    Route::post('/medecin/appointments/{id}/cancel', [AppointmentController::class, 'cancelByMedecin']);
 
     /*
     |------------------------------------------------------------------
@@ -117,8 +122,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/patients/{id}',  [PatientController::class, 'show']);
     Route::put('/patients/{id}',  [PatientController::class, 'update']);
 
-    // Liste des rendez-vous du patient connecté
-    Route::get('/appointments', [AppointmentController::class, 'index']);
+    // Profil patient dédié (sans id dans l'URL)
+    Route::get('/patient/profile', [PatientProfileController::class, 'show']);
+    Route::put('/patient/profile', [PatientProfileController::class, 'update']);
+
+    // Rendez-vous patient — un endpoint par action
+    Route::get('/patient/appointments', [PatientAppointmentController::class, 'index']);
+    Route::post('/patient/appointments', [PatientAppointmentController::class, 'store']);
+    Route::post('/patient/appointments/{id}/cancel', [PatientAppointmentController::class, 'cancel']);
+    Route::post('/patient/appointments/{id}/pay', [PatientAppointmentController::class, 'pay']);
+
+    // Recherche et réservation côté patient
+    Route::get('/patient/doctors', [MedecinController::class, 'index']);
+    Route::get('/patient/doctors/{id}', [MedecinController::class, 'show']);
+    Route::get('/patient/doctors/{id}/slots/{date}', [AppointmentController::class, 'patientSlots']);
+    Route::get('/patient/services', [ServiceController::class, 'index']);
+
+    // Compatibilité des anciens écrans
+    Route::get('/appointments', [PatientAppointmentController::class, 'index']);
 
     /*
     |------------------------------------------------------------------
@@ -137,7 +158,7 @@ Route::middleware('auth:sanctum')->group(function () {
     |------------------------------------------------------------------
     */
     Route::get('/appointments/slots/{medecin_id}/{date}', [AppointmentController::class, 'getAvailableSlots']);
-    Route::post('/appointments/request', [AppointmentController::class, 'store']);
+    Route::post('/appointments/request', [PatientAppointmentController::class, 'store']);
     Route::post('/invoices/{id}/pay',    [InvoiceController::class, 'pay']);
 
     /*
