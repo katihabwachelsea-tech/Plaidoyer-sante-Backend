@@ -35,14 +35,11 @@ class User extends Authenticatable
     /**
      * Le cast des attributs (formatage automatique).
      */
-    protected function casts(): array
-    {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-            'is_profile_completed' => 'boolean',
-        ];
-    }
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password' => 'hashed',
+        'is_profile_completed' => 'boolean',
+    ];
 
     /*
     |--------------------------------------------------------------------------
