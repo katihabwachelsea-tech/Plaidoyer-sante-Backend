@@ -21,6 +21,7 @@ class Patient extends Model
         'groupe_sanguin',
         'maladie',
         'antecedents',
+        'allergies',
     ];
     
 public function user()

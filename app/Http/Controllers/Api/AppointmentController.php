@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
+use App\Models\AppNotification;
 use App\Models\Creneau;
 use App\Models\Invoice;
 use App\Models\Service;
@@ -96,7 +97,7 @@ class AppointmentController extends Controller
         if ($user->role === 'medecin') {
             $query = Appointment::with(['service', 'patient.user', 'invoice'])
                 ->where('medecin_id', $user->id)
-                ->where('statut', 'Confirme')
+                ->whereIn('statut', ['En_attente', 'Accepte', 'Confirme'])
                 ->orderBy('date_rdv', 'asc');
 
             // Filtre ?today=1 pour MedecinApiService.getAppointments(todayOnly: true)
@@ -114,8 +115,11 @@ class AppointmentController extends Controller
                     'medecin_id'      => $appt->medecin_id,
                     'patient_user_id' => $appt->patient_id,
                     'motif'           => $appt->motif,
+                    'urgence'         => $appt->urgence ?? 'Normal',
+                    'pieces_jointes'  => $appt->pieces_jointes ?? [],
                     'statut'          => $appt->statut,
                     'date_heure'      => $appt->date_rdv,
+                    'meeting_url'     => $appt->meeting_url,
                     'montant'         => $appt->invoice?->montant,
                     'payment_ref'     => $appt->invoice?->transaction_id,
                     'patient_user'    => $appt->patient?->user ? [
@@ -123,7 +127,12 @@ class AppointmentController extends Controller
                         'email'     => $appt->patient->user->email,
                         'telephone' => $appt->patient->user->telephone,
                     ] : null,
-                    'service'         => $appt->service,
+                    'service'         => $appt->service ? [
+                        'id'          => $appt->service->id,
+                        'nom_service' => $appt->service->nom_service,
+                        'prix'        => $appt->service->prix,
+                        'mode'        => $appt->service->mode,
+                    ] : null,
                 ];
             });
 
@@ -169,6 +178,98 @@ class AppointmentController extends Controller
     }
 
     /**
+     * POST /api/medecin/appointments/{id}/accept
+     * Le médecin accepte la demande → le patient peut maintenant payer.
+     */
+    public function acceptByMedecin(Request $request, $id)
+    {
+        $user = $request->user();
+        if ($user->role !== 'medecin') {
+            return response()->json(['status' => false, 'message' => 'Accès réservé aux médecins.'], 403);
+        }
+
+        $appointment = Appointment::with(['patient.user', 'service'])
+            ->where('id', $id)
+            ->where('medecin_id', $user->id)
+            ->first();
+
+        if (!$appointment) {
+            return response()->json(['status' => false, 'message' => 'Rendez-vous introuvable.'], 404);
+        }
+
+        if ($appointment->statut !== 'En_attente') {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Seule une demande en attente peut être acceptée.',
+            ], 422);
+        }
+
+        $appointment->update(['statut' => 'Accepte']);
+
+        AppNotification::notify(
+            (int) $appointment->patient_id,
+            'Demande acceptée ✅',
+            'Le Dr. '.$user->nom.' a accepté votre demande. Vous pouvez maintenant procéder au paiement.',
+            'appointment_accepted',
+            ['appointment_id' => $appointment->id]
+        );
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Demande acceptée. Le patient peut maintenant payer.',
+            'data'    => $appointment->fresh(['service', 'patient.user', 'invoice']),
+        ]);
+    }
+
+    /**
+     * POST /api/medecin/appointments/{id}/refuse
+     * Le médecin refuse la demande.
+     */
+    public function refuseByMedecin(Request $request, $id)
+    {
+        $user = $request->user();
+        if ($user->role !== 'medecin') {
+            return response()->json(['status' => false, 'message' => 'Accès réservé aux médecins.'], 403);
+        }
+
+        $validated = $request->validate([
+            'raison' => 'nullable|string|max:255',
+        ]);
+
+        $appointment = Appointment::where('id', $id)
+            ->where('medecin_id', $user->id)
+            ->first();
+
+        if (!$appointment) {
+            return response()->json(['status' => false, 'message' => 'Rendez-vous introuvable.'], 404);
+        }
+
+        if ($appointment->statut !== 'En_attente') {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Seule une demande en attente peut être refusée.',
+            ], 422);
+        }
+
+        $appointment->update(['statut' => 'Annule']);
+        $this->releaseCreneau($appointment);
+
+        $raison = $validated['raison'] ?? 'Aucune raison précisée.';
+        AppNotification::notify(
+            (int) $appointment->patient_id,
+            'Demande refusée ❌',
+            'Le Dr. '.$user->nom.' a refusé votre demande. Raison : '.$raison,
+            'appointment_refused',
+            ['appointment_id' => $appointment->id]
+        );
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Demande refusée.',
+        ]);
+    }
+
+    /**
      * POST /api/medecin/appointments/{id}/cancel
      */
     public function cancelByMedecin(Request $request, $id)
@@ -194,6 +295,15 @@ class AppointmentController extends Controller
         }
 
         $appointment->update(['statut' => 'Annule']);
+        $this->releaseCreneau($appointment);
+
+        AppNotification::notify(
+            (int) $appointment->patient_id,
+            'Rendez-vous annulé',
+            'Le médecin a annulé votre rendez-vous.',
+            'appointment_cancelled',
+            ['appointment_id' => $appointment->id]
+        );
 
         return response()->json([
             'status'  => true,
@@ -210,71 +320,71 @@ class AppointmentController extends Controller
     }
 
     /**
- * Récupérer les créneaux disponibles pour un médecin à une date donnée
- */
-public function getAvailableSlots(Request $request, $medecin_id, $date)
+     * Récupérer les créneaux disponibles pour un médecin à une date donnée.
+     * Uniquement les créneaux publiés (pas de fallback 08h–17h).
+     */
+    public function getAvailableSlots(Request $request, $medecin_id, $date)
+    {
+        $request->merge([
+            'medecin_id' => $medecin_id,
+            'date'       => $date,
+        ]);
 
-{
-// 1. On injecte les paramètres de l'URL dans la requête pour que la validation continue de fonctionner
-    $request->merge([
-        'medecin_id' => $medecin_id,
-        'date'       => $date,
-    ]);
+        $request->validate([
+            'medecin_id' => 'required|exists:medecins,user_id',
+            'date'       => 'required|date|after_or_equal:today',
+        ]);
 
-    $request->validate([
-        'medecin_id' => 'required|exists:medecins,user_id',
-        'date'=> 'required|date|after_or_equal:today',
-    ]);
+        $medecinId = $request->medecin_id;
+        $date = $request->date;
 
-    $medecinId = $request->medecin_id;
-    $date = $request->date; // Format Y-m-d
+        $takenTimes = Appointment::where('medecin_id', $medecinId)
+            ->whereDate('date_rdv', $date)
+            ->whereIn('statut', ['En_attente', 'Accepte', 'Confirme'])
+            ->get()
+            ->map(fn ($app) => Carbon::parse($app->date_rdv)->format('H:i'))
+            ->toArray();
 
-    $appointments = Appointment::where('medecin_id', $medecinId)
-        ->whereDate('date_rdv', $date)
-        ->whereIn('statut', ['Confirme', 'En_attente'])
-        ->get()
-        ->map(function ($app) {
-            return Carbon::parse($app->date_rdv)->format('H:i');
-        })
-        ->toArray();
+        // Inclure aussi disponible=false pour afficher les slots occupés comme unavailable
+        $published = Creneau::where('medecin_id', $medecinId)
+            ->whereDate('date', $date)
+            ->orderBy('heure_debut')
+            ->get();
 
-    $published = Creneau::where('medecin_id', $medecinId)
-        ->whereDate('date', $date)
-        ->where('disponible', true)
-        ->orderBy('heure_debut')
-        ->get();
-
-    $slots = [];
-
-    if ($published->isNotEmpty()) {
+        $slots = [];
         foreach ($published as $creneau) {
             $time = substr((string) $creneau->heure_debut, 0, 5);
             $slotAt = Carbon::parse($date . ' ' . $time);
             $slots[] = [
                 'time'       => $time,
-                'available'  => !in_array($time, $appointments, true) && !$slotAt->isPast(),
+                'available'  => $creneau->disponible
+                    && !in_array($time, $takenTimes, true)
+                    && !$slotAt->isPast(),
                 'creneau_id' => $creneau->id,
             ];
         }
-    } else {
-        $startWork = Carbon::parse($date . ' 08:00:00');
-        $endWork   = Carbon::parse($date . ' 17:00:00');
-        $interval  = 45;
-        $current = $startWork;
 
-        while ($current->copy()->addMinutes($interval) <= $endWork) {
-            $time = $current->format('H:i');
-            $slots[] = [
-                'time'      => $time,
-                'available' => !in_array($time, $appointments, true) && !$current->isPast(),
-            ];
-            $current->addMinutes($interval);
-        }
+        return response()->json([
+            'status' => true,
+            'data'   => $slots,
+        ]);
     }
 
-    return response()->json([
-        'status' => true,
-        'data'   => $slots
-    ]);
-}
+    private function releaseCreneau(Appointment $appointment): void
+    {
+        if (!$appointment->date_rdv) {
+            return;
+        }
+        $date = $appointment->date_rdv->toDateString();
+        $time = $appointment->date_rdv->format('H:i');
+
+        Creneau::where('medecin_id', $appointment->medecin_id)
+            ->whereDate('date', $date)
+            ->get()
+            ->each(function (Creneau $creneau) use ($time) {
+                if (substr((string) $creneau->heure_debut, 0, 5) === $time) {
+                    $creneau->update(['disponible' => true]);
+                }
+            });
+    }
 }

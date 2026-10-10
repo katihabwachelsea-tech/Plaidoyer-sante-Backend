@@ -58,8 +58,105 @@ class PatientController extends Controller
     }
 
     /**
-     * PUT /api/patients/{id}
+     * GET /api/medecin/patients/{patient_id}/dossier
      *
+     * Dossier complet d'un patient — réservé aux médecins.
+     * Retourne : profil, constantes vitales (dernière consult), traitements
+     * en cours (médicaments de toutes les consultations), historique.
+     */
+    public function dossier(Request $request, $patientId)
+    {
+        $authUser = $request->user();
+
+        if ($authUser->role !== 'medecin') {
+            return response()->json(['status' => false, 'message' => 'Accès réservé aux médecins.'], 403);
+        }
+
+        $patient = Patient::with('user')->where('user_id', $patientId)->first();
+        if (!$patient) {
+            return response()->json(['status' => false, 'message' => 'Patient introuvable.'], 404);
+        }
+
+        // Toutes les consultations de ce patient (ordonnées par date desc)
+        $consultations = \App\Models\Consultation::whereHas('appointment', function ($q) use ($patientId) {
+            $q->where('patient_id', $patientId);
+        })
+        ->with(['appointment.medecin.user', 'appointment.service'])
+        ->orderBy('date_consultation', 'desc')
+        ->get();
+
+        // Dernières constantes vitales (première consultation qui en a)
+        $lastConstantes = null;
+        $lastConsultDate = null;
+        foreach ($consultations as $c) {
+            if (!empty($c->constantes_vitales)) {
+                $lastConstantes  = $c->constantes_vitales;
+                $lastConsultDate = $c->date_consultation;
+                break;
+            }
+        }
+
+        // Tous les médicaments de toutes les consultations (traitements)
+        $medicaments = [];
+        foreach ($consultations as $c) {
+            if (!empty($c->medicaments)) {
+                foreach ($c->medicaments as $m) {
+                    $medicaments[] = array_merge($m, [
+                        'prescrit_le' => optional($c->date_consultation)->toDateString(),
+                        'consultation_id' => $c->id,
+                    ]);
+                }
+            }
+        }
+
+        // Historique consultations formaté
+        $historique = $consultations->map(function ($c) {
+            return [
+                'id'                      => $c->id,
+                'appointment_id'          => $c->appointment_id,
+                'date_consultation'       => optional($c->date_consultation)->toIso8601String(),
+                'diagnostic'              => $c->diagnostic,
+                'ordonnance'              => $c->ordonnance,
+                'anamnese'                => $c->anamnese,
+                'examen'                  => $c->examen,
+                'notes'                   => $c->conseils_ia,
+                'conseils_ia'             => $c->conseils_ia,
+                'soap_s'                  => $c->soap_s,
+                'soap_o'                  => $c->soap_o,
+                'soap_a'                  => $c->soap_a,
+                'soap_p'                  => $c->soap_p,
+                'constantes_vitales'      => $c->constantes_vitales,
+                'medicaments'             => $c->medicaments,
+                'examens_complementaires' => $c->examens_complementaires,
+                'signature_path'          => $c->signature_path,
+                'medecin'                 => $c->appointment?->medecin?->user?->nom,
+                'service'                 => $c->appointment?->service?->nom_service,
+                'motif'                   => $c->appointment?->motif,
+            ];
+        });
+
+        return response()->json([
+            'status' => true,
+            'data'   => [
+                'profil' => [
+                    'user_id'        => $patient->user_id,
+                    'nom'            => $patient->user?->nom,
+                    'email'          => $patient->user?->email,
+                    'telephone'      => $patient->user?->telephone,
+                    'date_naissance' => $patient->date_naissance,
+                    'groupe_sanguin' => $patient->groupe_sanguin,
+                    'maladie'        => $patient->maladie,
+                    'antecedents'    => $patient->antecedents,
+                ],
+                'dernieres_constantes' => $lastConstantes,
+                'derniere_consult_date' => optional($lastConsultDate)->toIso8601String(),
+                'medicaments'          => $medicaments,
+                'historique'           => $historique,
+            ],
+        ]);
+    }
+
+    /**
      * Met à jour les informations médicales du patient identifié par {id}.
      * Seul le patient lui-même peut modifier son profil.
      */

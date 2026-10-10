@@ -104,11 +104,107 @@ class CreneauController extends Controller
             ->where('medecin_id', $user->id)
             ->firstOrFail();
 
+        // Sécurité : interdire suppression si créneau réservé
+        if (!$creneau->disponible) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Ce créneau est déjà réservé par un patient. Annulez d\'abord le rendez-vous.',
+            ], 422);
+        }
+
         $creneau->delete();
 
         return response()->json([
             'status'  => true,
             'message' => 'Créneau supprimé.'
         ]);
+    }
+
+    /**
+     * PUT /api/medecin/creneaux/{id}
+     * Modifie l'heure ou la disponibilité d'un créneau non réservé.
+     */
+    public function update(Request $request, $id)
+    {
+        $user = $request->user();
+
+        if ($user->role !== 'medecin') {
+            return response()->json(['message' => 'Action non autorisée.'], 403);
+        }
+
+        $creneau = Creneau::where('id', $id)
+            ->where('medecin_id', $user->id)
+            ->firstOrFail();
+
+        if (!$creneau->disponible) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Impossible de modifier un créneau déjà réservé.',
+            ], 422);
+        }
+
+        $validated = $request->validate([
+            'heure_debut' => 'sometimes|string|regex:/^\d{2}:\d{2}$/',
+            'heure_fin'   => 'sometimes|string|regex:/^\d{2}:\d{2}$/',
+            'disponible'  => 'sometimes|boolean',
+        ]);
+
+        $creneau->update($validated);
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Créneau mis à jour.',
+            'data'    => $creneau->fresh(),
+        ]);
+    }
+
+    /**
+     * POST /api/medecin/creneaux/bulk
+     * Crée plusieurs créneaux en une seule requête.
+     * Payload : { creneaux: [ { date, heure_debut, heure_fin }, ... ] }
+     * Ignore silencieusement les doublons.
+     */
+    public function bulk(Request $request)
+    {
+        $user = $request->user();
+
+        if ($user->role !== 'medecin') {
+            return response()->json(['message' => 'Action non autorisée.'], 403);
+        }
+
+        $request->validate([
+            'creneaux'                => 'required|array|min:1|max:50',
+            'creneaux.*.date'         => 'required|date|after_or_equal:today',
+            'creneaux.*.heure_debut'  => 'required|string|regex:/^\d{2}:\d{2}$/',
+            'creneaux.*.heure_fin'    => 'required|string|regex:/^\d{2}:\d{2}$/',
+        ]);
+
+        $created = [];
+        $skipped = 0;
+
+        foreach ($request->creneaux as $item) {
+            $existe = Creneau::where('medecin_id', $user->id)
+                ->where('date', $item['date'])
+                ->where('heure_debut', $item['heure_debut'])
+                ->exists();
+
+            if ($existe) { $skipped++; continue; }
+
+            $created[] = Creneau::create([
+                'medecin_id'  => $user->id,
+                'date'        => $item['date'],
+                'heure_debut' => $item['heure_debut'],
+                'heure_fin'   => $item['heure_fin'],
+                'disponible'  => true,
+            ]);
+        }
+
+        return response()->json([
+            'status'  => true,
+            'message' => count($created).' créneau(x) créé(s), '.$skipped.' ignoré(s) (doublons).',
+            'data'    => $created,
+            'created' => count($created),
+            'skipped' => $skipped,
+        ], 201);
     }
 }

@@ -31,15 +31,16 @@ class MedecinDashboardController extends Controller
             ->whereDate('date_rdv', $today)
             ->count();
 
+        // À venir = après aujourd'hui (ne pas double-compter les RDV du jour)
         $upcomingCount = Appointment::where('medecin_id', $medecinId)
             ->where('statut', 'Confirme')
-            ->where('date_rdv', '>=', now())
+            ->whereDate('date_rdv', '>', $today)
             ->count();
 
         $patientsCount = Appointment::where('medecin_id', $medecinId)
             ->whereIn('statut', ['Confirme', 'Termine'])
-            ->distinct('patient_id')
-            ->count('patient_id');
+            ->selectRaw('COUNT(DISTINCT patient_id) as aggregate')
+            ->value('aggregate') ?? 0;
 
         $creneauxCount = Creneau::where('medecin_id', $medecinId)
             ->whereDate('date', '>=', $today->toDateString())

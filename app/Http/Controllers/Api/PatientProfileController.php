@@ -46,6 +46,7 @@ class PatientProfileController extends Controller
             'groupe_sanguin' => 'nullable|string|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
             'maladie'        => 'nullable|string|max:255',
             'antecedents'    => 'nullable|string',
+            'allergies'      => 'nullable|string',
         ]);
 
         $patient = Patient::where('user_id', $user->id)->firstOrFail();
@@ -55,6 +56,7 @@ class PatientProfileController extends Controller
             'groupe_sanguin' => $validated['groupe_sanguin'] ?? null,
             'maladie'        => $validated['maladie'] ?? null,
             'antecedents'    => $validated['antecedents'] ?? null,
+            'allergies'      => $validated['allergies'] ?? null,
         ], fn ($v) => $v !== null));
 
         $userUpdates = array_filter([
@@ -73,6 +75,37 @@ class PatientProfileController extends Controller
         ]);
     }
 
+    /**
+     * POST /api/patient/profile/photo
+     */
+    public function uploadPhoto(Request $request)
+    {
+        $user = $request->user();
+        if ($user->role !== 'patient') {
+            return response()->json(['status' => false, 'message' => 'Accès réservé aux patients.'], 403);
+        }
+
+        $request->validate([
+            'photo' => 'required|image|mimes:jpeg,png,jpg,webp|max:4096',
+        ]);
+
+        if ($user->photo_url && str_contains($user->photo_url, '/storage/')) {
+            $oldPath = str_replace('/storage/', 'public/', parse_url($user->photo_url, PHP_URL_PATH));
+            \Storage::delete($oldPath);
+        }
+
+        $path = $request->file('photo')->store('public/patients');
+        $url = \Storage::url($path);
+
+        $user->update(['photo_url' => $url]);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Photo uploadée avec succès.',
+            'photo_url' => $url,
+        ]);
+    }
+
     private function format(Patient $patient): array
     {
         return [
@@ -80,10 +113,12 @@ class PatientProfileController extends Controller
             'nom'            => $patient->user?->nom,
             'email'          => $patient->user?->email,
             'telephone'      => $patient->user?->telephone,
+            'photo_url'      => $patient->user?->photo_url,
             'date_naissance' => $patient->date_naissance,
             'groupe_sanguin' => $patient->groupe_sanguin,
             'maladie'        => $patient->maladie,
             'antecedents'    => $patient->antecedents,
+            'allergies'      => $patient->allergies,
         ];
     }
 }

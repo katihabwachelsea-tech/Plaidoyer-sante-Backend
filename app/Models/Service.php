@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Service extends Model
 {
-    protected $fillable = ['nom_service', 'prix'];
+    protected $fillable = ['nom_service', 'prix', 'mode', 'specialite'];
 
     /**
      * Un service peut être lié à plusieurs rendez-vous.

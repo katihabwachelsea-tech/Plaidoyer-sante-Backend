@@ -19,11 +19,15 @@ class Appointment extends Model
         'service_id',
         'date_rdv',
         'motif',
-        'statut', // en_attente, confirme, termine, annule
+        'urgence',
+        'pieces_jointes',
+        'statut',
+        'meeting_url',
     ];
-// Pour que Laravel traite 'date_rdv' comme un objet Carbon (pratique pour le formatage)
+
     protected $casts = [
-        'date_rdv' => 'datetime',
+        'date_rdv'       => 'datetime',
+        'pieces_jointes' => 'array',
     ];
 
   /*

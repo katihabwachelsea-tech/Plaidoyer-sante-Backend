@@ -43,11 +43,13 @@ class AuthController extends Controller
             'message' => 'Utilisateur connecté avec succès',
             'token' => $token,
             'user' => [
-                'id' => $user->id,
-                'nom' => $user->nom,
-                'email' => $user->email,
-                'role' => $user->role,
-                'telephone' => $user->telephone
+                'id'                   => $user->id,
+                'nom'                  => $user->nom,
+                'email'                => $user->email,
+                'role'                 => $user->role,
+                'telephone'            => $user->telephone,
+                'photo_url'            => $user->photo_url,
+                'is_profile_completed' => (bool) $user->is_profile_completed,
             ]
         ], 200);
     }

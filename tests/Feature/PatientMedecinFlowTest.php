@@ -80,6 +80,12 @@ class PatientMedecinFlowTest extends TestCase
 
         $appointmentId = $booked->json('data.id');
 
+        // Le médecin doit accepter avant le paiement
+        $this->actingAs($doctorUser, 'sanctum')
+            ->postJson("/api/medecin/appointments/{$appointmentId}/accept")
+            ->assertOk()
+            ->assertJsonPath('data.statut', 'Accepte');
+
         $this->actingAs($patientUser, 'sanctum')
             ->postJson("/api/patient/appointments/{$appointmentId}/pay", [
                 'methode_paiement' => 'Ecocash',
@@ -98,12 +104,18 @@ class PatientMedecinFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.statut', 'Confirme');
 
+        // Consultation autorisée uniquement le jour J — forcer la date du RDV à aujourd'hui
+        \App\Models\Appointment::where('id', $appointmentId)->update([
+            'date_rdv' => now()->setTime(10, 0),
+        ]);
+
         $this->actingAs($doctorUser, 'sanctum')
             ->postJson('/api/consultations', [
                 'rendez_vous_id' => $appointmentId,
                 'diagnostic' => 'Tension stable',
                 'ordonnance' => 'Repos 48h',
                 'notes' => 'Revoir dans un mois',
+                'signature' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
             ])
             ->assertOk()
             ->assertJsonPath('status', true);

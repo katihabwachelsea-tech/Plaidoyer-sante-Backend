@@ -20,6 +20,10 @@ use App\Http\Controllers\Api\SpecialiteController;
 use App\Http\Controllers\Api\PatientAppointmentController;
 use App\Http\Controllers\Api\PatientProfileController;
 use App\Http\Controllers\Api\MedecinDashboardController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PasswordResetController;
+use App\Http\Controllers\Api\DeviceTokenController;
+use App\Http\Controllers\Api\MessageController;
 
 /*
 |--------------------------------------------------------------------------
@@ -29,6 +33,11 @@ use App\Http\Controllers\Api\MedecinDashboardController;
 
 Route::post('/register', [RegisterController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
+
+// Réinitialisation mot de passe — 3 étapes
+Route::post('/password/forgot',      [PasswordResetController::class, 'sendCode']);
+Route::post('/password/verify-code', [PasswordResetController::class, 'verifyCode']);
+Route::post('/password/reset',       [PasswordResetController::class, 'resetPassword']);
 
 // Spécialités et services — publics pour la recherche patient
 Route::get('/specialites', [SpecialiteController::class, 'index']);
@@ -68,6 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::get('/medecin/profile', [MedecinProfileController::class, 'show']);
     Route::put('/medecin/profile', [MedecinProfileController::class, 'update']);
+    Route::post('/medecin/profile/photo', [MedecinProfileController::class, 'uploadPhoto']); // upload photo
     Route::get('/medecin/dashboard', [MedecinDashboardController::class, 'show']);
 
     // Mise à jour via l'ancienne route (rétro-compatibilité)
@@ -81,9 +91,11 @@ Route::middleware('auth:sanctum')->group(function () {
     |                                  → DELETE /api/medecin/creneaux/{id}
     |------------------------------------------------------------------
     */
-    Route::get('/medecin/creneaux',        [CreneauController::class, 'index']);
-    Route::post('/medecin/creneaux',       [CreneauController::class, 'store']);
-    Route::delete('/medecin/creneaux/{id}', [CreneauController::class, 'destroy']);
+    Route::get('/medecin/creneaux',             [CreneauController::class, 'index']);
+    Route::post('/medecin/creneaux',            [CreneauController::class, 'store']);
+    Route::post('/medecin/creneaux/bulk',       [CreneauController::class, 'bulk']);
+    Route::put('/medecin/creneaux/{id}',        [CreneauController::class, 'update']);
+    Route::delete('/medecin/creneaux/{id}',     [CreneauController::class, 'destroy']);
 
     /*
     |------------------------------------------------------------------
@@ -112,6 +124,8 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::get('/medecin/appointments/today-count', [AppointmentController::class, 'todayCount']);
     Route::get('/medecin/appointments',             [AppointmentController::class, 'index']);
+    Route::post('/medecin/appointments/{id}/accept', [AppointmentController::class, 'acceptByMedecin']);
+    Route::post('/medecin/appointments/{id}/refuse', [AppointmentController::class, 'refuseByMedecin']);
     Route::post('/medecin/appointments/{id}/cancel', [AppointmentController::class, 'cancelByMedecin']);
 
     /*
@@ -121,10 +135,28 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::get('/patients/{id}',  [PatientController::class, 'show']);
     Route::put('/patients/{id}',  [PatientController::class, 'update']);
+    // Dossier complet patient — accessible au médecin
+    Route::get('/medecin/patients/{id}/dossier', [PatientController::class, 'dossier']);
 
     // Profil patient dédié (sans id dans l'URL)
     Route::get('/patient/profile', [PatientProfileController::class, 'show']);
     Route::put('/patient/profile', [PatientProfileController::class, 'update']);
+    Route::post('/patient/profile/photo', [PatientProfileController::class, 'uploadPhoto']);
+
+    // Notifications in-app (patient + médecin)
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+
+    // Tokens FCM — enregistrement/suppression
+    Route::post('/device-token',   [DeviceTokenController::class, 'register']);
+    Route::delete('/device-token', [DeviceTokenController::class, 'remove']);
+
+    // Messagerie instantanée — liée à un RDV
+    Route::get('/appointments/{id}/messages',              [MessageController::class, 'index']);
+    Route::post('/appointments/{id}/messages',             [MessageController::class, 'store']);
+    Route::get('/appointments/{id}/messages/unread-count', [MessageController::class, 'unreadCount']);
 
     // Rendez-vous patient — un endpoint par action
     Route::get('/patient/appointments', [PatientAppointmentController::class, 'index']);
@@ -136,6 +168,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/patient/doctors', [MedecinController::class, 'index']);
     Route::get('/patient/doctors/{id}', [MedecinController::class, 'show']);
     Route::get('/patient/doctors/{id}/slots/{date}', [AppointmentController::class, 'patientSlots']);
+    Route::get('/patient/doctors/{id}/services', [ServiceController::class, 'forDoctor']);
     Route::get('/patient/services', [ServiceController::class, 'index']);
 
     // Compatibilité des anciens écrans
@@ -184,8 +217,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Routes de débogage — À SUPPRIMER en production
+| Routes de débogage — SUPPRIMÉES (ne pas remettre en production)
 |--------------------------------------------------------------------------
 */
-Route::get('/test-users',   fn () => \App\Models\User::all());
-Route::get('/debug-users',  [ProfileController::class, 'getAllUsers']);

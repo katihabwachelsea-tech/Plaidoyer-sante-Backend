@@ -15,7 +15,7 @@ class ProfileController extends Controller
      * Les trois routes pointent vers cette méthode.
      * Le rôle de l'utilisateur connecté fait foi.
      *
-     * Payload médecin  : { specialite, hopital, biographie?, disponibilite? }
+     * Payload médecin  : { specialite, licence, hopital, biographie?, disponibilite? }
      * Payload patient  : { date_naissance?, groupe_sanguin?, maladie?, antecedents? }
      */
     public function completeProfile(Request $request)
@@ -26,6 +26,7 @@ class ProfileController extends Controller
         if ($user->role === 'medecin') {
             $request->validate([
                 'specialite'    => 'required|string|max:100',
+                'licence'       => 'required|string|unique:medecins,licence,' . ($user->medecin->id ?? 'NULL'),
                 'hopital'       => 'required|string|max:150',
                 'biographie'    => 'nullable|string',
                 'disponibilite' => 'nullable|string',
@@ -33,6 +34,7 @@ class ProfileController extends Controller
 
             $user->medecin()->update([
                 'specialite'    => $request->specialite,
+                'licence'       => $request->licence,
                 'hopital'       => $request->hopital,
                 'biographie'    => $request->biographie,
                 'disponibilite' => $request->disponibilite,
@@ -46,6 +48,7 @@ class ProfileController extends Controller
                 'groupe_sanguin' => 'nullable|string|in:A+,A-,B+,B-,AB+,AB-,O+,O-',
                 'maladie'        => 'nullable|string',
                 'antecedents'    => 'nullable|string',
+                'allergies'      => 'nullable|string',
             ]);
 
             $user->patient()->update([
@@ -53,6 +56,7 @@ class ProfileController extends Controller
                 'groupe_sanguin' => $request->groupe_sanguin,
                 'maladie'        => $request->maladie,
                 'antecedents'    => $request->antecedents,
+                'allergies'      => $request->allergies,
             ]);
         } else {
             return response()->json(['message' => 'Rôle non supporté pour cette action.'], 403);

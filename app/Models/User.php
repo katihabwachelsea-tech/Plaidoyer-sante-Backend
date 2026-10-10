@@ -19,8 +19,9 @@ class User extends Authenticatable
         'email',
         'password',
         'telephone',
+        'photo_url',
         'role',
-        'is_profile_completed', // Crucial pour ton onboarding !
+        'is_profile_completed',
     ];
 
     /**

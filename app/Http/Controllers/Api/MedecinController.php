@@ -13,32 +13,29 @@ class MedecinController extends Controller
      */
     public function index(Request $request)
     {
-        // On récupère les médecins avec les infos de l'utilisateur (nom, tel, etc.)
-        $query = Medecin::with('user')
-            ->where('is_validated', true) // Uniquement les validés par l'admin
-            ->whereHas('user', function($query) {
-                $query->where('is_profile_completed', true); // Uniquement ceux qui ont fini l'onboarding
+        $query = Medecin::with(['user', 'services'])
+            ->where('is_validated', true)
+            ->whereHas('user', function ($q) {
+                $q->where('is_profile_completed', true);
             });
 
-        // Filtre par spécialité
-        if ($request->has('specialite') && !empty($request->specialite)) {
+        if ($request->filled('specialite')) {
             $query->where('specialite', $request->specialite);
         }
 
-        // Recherche par nom, prénom ou hôpital
-        if ($request->has('search') && !empty($request->search)) {
+        if ($request->filled('search')) {
             $search = $request->search;
-            $query->whereHas('user', function($q) use ($search) {
+            $query->whereHas('user', function ($q) use ($search) {
                 $q->where('nom', 'like', '%' . $search . '%');
             })->orWhere('hopital', 'like', '%' . $search . '%');
         }
 
-        $medecins = $query->get();
+        $medecins = $query->get()->map(fn($m) => $this->formatMedecin($m));
 
         return response()->json([
             'status' => true,
             'count'  => $medecins->count(),
-            'data'   => $medecins
+            'data'   => $medecins,
         ]);
     }
 
@@ -47,7 +44,7 @@ class MedecinController extends Controller
      */
     public function show($id)
     {
-        $medecin = Medecin::with('user')->find($id);
+        $medecin = Medecin::with(['user', 'services'])->find($id);
 
         if (!$medecin) {
             return response()->json(['message' => 'Médecin non trouvé'], 404);
@@ -55,36 +52,69 @@ class MedecinController extends Controller
 
         return response()->json([
             'status' => true,
-            'data'   => $medecin
+            'data'   => $this->formatMedecin($medecin),
         ]);
     }
 
     public function update(Request $request)
-{
-    $user = $request->user();
+    {
+        $user = $request->user();
 
-    // 1. Sécurité : On vérifie que c'est bien un médecin qui appelle cette route
-    if ($user->role !== 'medecin') {
-        return response()->json(['message' => 'Action non autorisée.'], 403);
+        if ($user->role !== 'medecin') {
+            return response()->json(['message' => 'Action non autorisée.'], 403);
+        }
+
+        $validated = $request->validate([
+            'specialite'    => 'nullable|string|max:100',
+            'hopital'       => 'nullable|string|max:150',
+            'biographie'    => 'nullable|string',
+            'disponibilite' => 'nullable|string',
+        ]);
+
+        $user->medecin()->update($validated);
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Informations professionnelles mises à jour.',
+            'data'    => $this->formatMedecin($user->load('medecin')->medecin),
+        ]);
     }
 
-    // 2. Validation des données
-    $validated = $request->validate([
-        'specialite'    => 'nullable|string|max:100',
-        'hopital'       => 'nullable|string|max:150',
-        'biographie'    => 'nullable|string',
-        'disponibilite' => 'nullable|string',
-    ]);
+    // ── Helper : format unifié retourné au client Flutter ────────────────────
 
-    // 3. Mise à jour des infos dans la table 'medecins'
-    // On utilise update() sur la relation
-    $user->medecin()->update($validated);
+    private function formatMedecin(Medecin $m): array
+    {
+        $services = $m->relationLoaded('services')
+            ? $m->services->map(fn ($s) => [
+                'id' => $s->id,
+                'nom_service' => $s->nom_service,
+                'prix' => $s->prix,
+                'mode' => $s->mode ?? 'presentiel',
+                'specialite' => $s->specialite,
+            ])->values()
+            : collect();
 
-    return response()->json([
-        'status'  => true,
-        'message' => 'Informations professionnelles mises à jour.',
-        'data'    => $user->load('medecin')
-    ]);
-}
-    
+        $modes = $services->pluck('mode')->unique()->values();
+        $minPrice = $services->min('prix');
+
+        return [
+            'user_id'       => $m->user_id,
+            'specialite'    => $m->specialite,
+            'licence'       => $m->licence,
+            'hopital'       => $m->hopital,
+            'biographie'    => $m->biographie,
+            'disponibilite' => $m->disponibilite,
+            'is_validated'  => $m->is_validated,
+            'services'      => $services,
+            'modes'         => $modes,
+            'prix_min'      => $minPrice,
+            'user' => [
+                'id'        => $m->user->id ?? null,
+                'nom'       => $m->user->nom ?? null,
+                'email'     => $m->user->email ?? null,
+                'telephone' => $m->user->telephone ?? null,
+                'photo_url' => $m->user->photo_url ?? null,
+            ],
+        ];
+    }
 }

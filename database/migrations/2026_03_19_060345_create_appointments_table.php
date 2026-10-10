@@ -18,7 +18,7 @@ return new class extends Migration
             $table->foreignId('service_id')->constrained('services');
             $table->dateTime('date_rdv');
             $table->text('motif');
-            $table->enum('statut', ['En_attente', 'Confirme', 'Annule', 'Termine'])->default('En_attente');
+            $table->enum('statut', ['En_attente', 'Accepte', 'Confirme', 'Annule', 'Termine'])->default('En_attente');
             $table->timestamps();
         });
 
