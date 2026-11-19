@@ -78,5 +78,8 @@ class Appointment extends Model
         return $this->hasOne(Consultation::class, 'appointment_id');
     }
 
-    
+    public function messages(): HasMany
+    {
+        return $this->hasMany(Message::class);
+    }
 }

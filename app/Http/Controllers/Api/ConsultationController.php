@@ -80,6 +80,20 @@ class ConsultationController extends Controller
             ], 403);
         }
 
+        // Ne pas démarrer avant l'heure prévue (marge 5 min), sauf sync offline
+        if (!$allowedByOffline) {
+            $rdvAt = Carbon::parse($appointment->date_rdv);
+            $earliest = $rdvAt->copy()->subMinutes(5);
+            $checkAt = now();
+            if ($checkAt->lt($earliest)) {
+                return response()->json([
+                    'message' => 'Trop tôt : la consultation commence à '.$rdvAt->format('H:i').'.',
+                    'code' => 'TOO_EARLY',
+                    'date_rdv' => $appointment->date_rdv?->toIso8601String(),
+                ], 403);
+            }
+        }
+
         return DB::transaction(function () use ($validated, $appointment, $request) {
             $signaturePath = null;
             if (!empty($validated['signature'])) {

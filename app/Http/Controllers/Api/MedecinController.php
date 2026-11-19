@@ -20,14 +20,22 @@ class MedecinController extends Controller
             });
 
         if ($request->filled('specialite')) {
-            $query->where('specialite', $request->specialite);
+            $spec = $request->specialite;
+            $query->where(function ($q) use ($spec) {
+                $q->where('specialite', 'like', '%' . $spec . '%');
+            });
         }
 
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->whereHas('user', function ($q) use ($search) {
-                $q->where('nom', 'like', '%' . $search . '%');
-            })->orWhere('hopital', 'like', '%' . $search . '%');
+            // Nested OR pour ne pas casser is_validated / is_profile_completed
+            $query->where(function ($q) use ($search) {
+                $q->where('specialite', 'like', '%' . $search . '%')
+                    ->orWhere('hopital', 'like', '%' . $search . '%')
+                    ->orWhereHas('user', function ($uq) use ($search) {
+                        $uq->where('nom', 'like', '%' . $search . '%');
+                    });
+            });
         }
 
         $medecins = $query->get()->map(fn($m) => $this->formatMedecin($m));
@@ -53,6 +61,45 @@ class MedecinController extends Controller
         return response()->json([
             'status' => true,
             'data'   => $this->formatMedecin($medecin),
+        ]);
+    }
+
+    /**
+     * GET /api/medecins/autocomplete?q=derm
+     * Retourne un petit ensemble de médecins pour suggestions pendant la saisie.
+     */
+    public function autocomplete(Request $request)
+    {
+        $q = trim($request->query('q', ''));
+        if ($q === '') {
+            return response()->json(['status' => true, 'data' => []]);
+        }
+
+        $query = Medecin::with(['user', 'services'])
+            ->where('is_validated', true)
+            ->whereHas('user', function ($uq) {
+                $uq->where('is_profile_completed', true);
+            })
+            ->where(function ($w) use ($q) {
+                $w->where('specialite', 'like', $q . '%')
+                  ->orWhere('specialite', 'like', '%' . $q . '%')
+                  ->orWhere('hopital', 'like', '%' . $q . '%')
+                  ->orWhereHas('user', function ($u) use ($q) {
+                      $u->where('nom', 'like', $q . '%')
+                        ->orWhere('nom', 'like', '%' . $q . '%');
+                  });
+            })
+            ->orderByRaw(
+                'CASE WHEN lower(specialite) LIKE ? THEN 0 WHEN lower(hopital) LIKE ? THEN 1 ELSE 2 END',
+                [mb_strtolower($q) . '%', mb_strtolower($q) . '%']
+            )
+            ->limit(10);
+
+        $medecins = $query->get()->map(fn($m) => $this->formatMedecin($m));
+
+        return response()->json([
+            'status' => true,
+            'data'   => $medecins,
         ]);
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\MessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\AppNotification;
 use App\Models\Appointment;
@@ -22,6 +23,7 @@ class MessageController extends Controller
         if (!$appt) {
             return response()->json(['status' => false, 'message' => 'RDV introuvable.'], 404);
         }
+        $appt->loadMissing(['patient.user', 'medecin.user']);
 
         // Marquer les messages de l'autre comme lus
         Message::where('appointment_id', $appointmentId)
@@ -33,11 +35,16 @@ class MessageController extends Controller
             ->with('sender')
             ->orderBy('created_at', 'asc')
             ->get()
-            ->map(fn($m) => $m->format($user->id));
+            ->map(fn($m) => $m->format((int) $user->id, $appt));
 
         return response()->json([
             'status' => true,
-            'data'   => $messages,
+            'current_user' => [
+                'id' => (int) $user->id,
+                'nom' => $user->nom,
+                'role' => $user->role,
+            ],
+            'data' => $messages,
         ]);
     }
 
@@ -53,6 +60,7 @@ class MessageController extends Controller
         if (!$appt) {
             return response()->json(['status' => false, 'message' => 'RDV introuvable.'], 404);
         }
+        $appt->loadMissing(['patient.user', 'medecin.user']);
 
         // Messagerie disponible tant que le RDV n'est pas annulé
         if ($appt->statut === 'Annule') {
@@ -74,7 +82,7 @@ class MessageController extends Controller
         $message->load('sender');
 
         // Notifier le destinataire
-        $recipientId = $user->id === $appt->patient_id
+        $recipientId = (int) $user->id === (int) $appt->patient_id
             ? $appt->medecin_id
             : $appt->patient_id;
 
@@ -86,9 +94,19 @@ class MessageController extends Controller
             ['appointment_id' => $appointmentId]
         );
 
+        $formatted = $message->format((int) $user->id, $appt);
+
+        // Broadcaster en temps réel via Pusher
+        broadcast(new MessageSent($formatted, $appointmentId))->toOthers();
+
         return response()->json([
             'status' => true,
-            'data'   => $message->format($user->id),
+            'current_user' => [
+                'id' => (int) $user->id,
+                'nom' => $user->nom,
+                'role' => $user->role,
+            ],
+            'data' => $formatted,
         ], 201);
     }
 

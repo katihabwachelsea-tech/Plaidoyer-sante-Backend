@@ -43,10 +43,10 @@ class PasswordResetController extends Controller
         try {
             Mail::send([], [], function ($message) use ($email, $code) {
                 $message->to($email)
-                    ->subject('Code de réinitialisation — Mob-Clinic')
+                    ->subject('Code de réinitialisation — MOB-MEDHEALTH CARE SERVICES')
                     ->html("
                         <div style='font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px'>
-                            <h2 style='color:#107ACA'>Mob-Clinic</h2>
+                            <h2 style='color:#107ACA'>MOB-MEDHEALTH CARE SERVICES</h2>
                             <p>Voici votre code de réinitialisation de mot de passe :</p>
                             <div style='font-size:36px;font-weight:bold;letter-spacing:8px;
                                         color:#107ACA;text-align:center;padding:20px;
@@ -98,7 +98,7 @@ class PasswordResetController extends Controller
         }
 
         // Vérifier expiration (15 min)
-        if (Carbon::parse($record->created_at)->addMinutes(15)->isPast()) {
+        if (!$record->created_at || Carbon::parse($record->created_at)->addMinutes(15)->isPast()) {
             DB::table('password_reset_tokens')->where('email', $request->email)->delete();
             return response()->json([
                 'status'  => false,
@@ -117,7 +117,10 @@ class PasswordResetController extends Controller
         $resetToken = Str::random(64);
         DB::table('password_reset_tokens')
             ->where('email', $request->email)
-            ->update(['token' => Hash::make($resetToken)]);
+            ->update([
+                'token' => Hash::make($resetToken),
+                'created_at' => Carbon::now(),
+            ]);
 
         return response()->json([
             'status'       => true,
@@ -143,6 +146,23 @@ class PasswordResetController extends Controller
         $record = DB::table('password_reset_tokens')
             ->where('email', $request->email)
             ->first();
+
+        if (
+            $record
+            && (
+                !$record->created_at
+                || Carbon::parse($record->created_at)->addMinutes(15)->isPast()
+            )
+        ) {
+            DB::table('password_reset_tokens')
+                ->where('email', $request->email)
+                ->delete();
+
+            return response()->json([
+                'status'  => false,
+                'message' => 'Ce jeton a expiré. Veuillez recommencer la procédure.',
+            ], 422);
+        }
 
         if (!$record || !Hash::check($request->reset_token, $record->token)) {
             return response()->json([

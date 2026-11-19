@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Creneau;
+use App\Services\WorkingTimeAvailability;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class CreneauController extends Controller
@@ -23,16 +25,39 @@ class CreneauController extends Controller
             return response()->json(['message' => 'Accès réservé aux médecins.'], 403);
         }
 
+        $validated = $request->validate([
+            'from' => 'sometimes|date_format:Y-m-d',
+            'to' => 'sometimes|date_format:Y-m-d',
+        ]);
+
+        if (!empty($validated['from']) && !empty($validated['to'])) {
+            $from = Carbon::parse($validated['from']);
+            $to = Carbon::parse($validated['to']);
+            if ($to->lt($from) || $from->diffInDays($to) > 62) {
+                return response()->json([
+                    'message' => 'La période demandée doit être comprise entre 0 et 62 jours.',
+                ], 422);
+            }
+
+            $today = Carbon::today();
+            for ($date = $from->greaterThan($today) ? $from : $today; $date->lte($to); $date->addDay()) {
+                app(WorkingTimeAvailability::class)->ensureDateSlots(
+                    (int) $user->id,
+                    $date->toDateString()
+                );
+            }
+        }
+
         $query = Creneau::where('medecin_id', $user->id)
             ->orderBy('date', 'asc')
             ->orderBy('heure_debut', 'asc');
 
         // Filtre optionnel par plage de dates
         if ($request->filled('from')) {
-            $query->where('date', '>=', $request->from);
+            $query->whereDate('date', '>=', $request->from);
         }
         if ($request->filled('to')) {
-            $query->where('date', '<=', $request->to);
+            $query->whereDate('date', '<=', $request->to);
         }
 
         $creneaux = $query->get();
@@ -66,7 +91,7 @@ class CreneauController extends Controller
 
         // Vérifier qu'il n'y a pas déjà un créneau identique
         $existe = Creneau::where('medecin_id', $user->id)
-            ->where('date', $validated['date'])
+            ->whereDate('date', $validated['date'])
             ->where('heure_debut', $validated['heure_debut'])
             ->exists();
 
@@ -111,6 +136,12 @@ class CreneauController extends Controller
                 'message' => 'Ce créneau est déjà réservé par un patient. Annulez d\'abord le rendez-vous.',
             ], 422);
         }
+        if ($creneau->generated_by_working_time) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Modifiez ce créneau depuis les horaires hebdomadaires.',
+            ], 422);
+        }
 
         $creneau->delete();
 
@@ -140,6 +171,12 @@ class CreneauController extends Controller
             return response()->json([
                 'status'  => false,
                 'message' => 'Impossible de modifier un créneau déjà réservé.',
+            ], 422);
+        }
+        if ($creneau->generated_by_working_time) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Modifiez ce créneau depuis les horaires hebdomadaires.',
             ], 422);
         }
 
@@ -184,7 +221,7 @@ class CreneauController extends Controller
 
         foreach ($request->creneaux as $item) {
             $existe = Creneau::where('medecin_id', $user->id)
-                ->where('date', $item['date'])
+                ->whereDate('date', $item['date'])
                 ->where('heure_debut', $item['heure_debut'])
                 ->exists();
 

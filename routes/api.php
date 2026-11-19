@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\AppointmentController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\ConsultationController;
 use App\Http\Controllers\Api\CreneauController;
+use App\Http\Controllers\Api\MedecinWorkingTimeController;
 use App\Http\Controllers\Api\MedecinPatientController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\SpecialiteController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Api\MedecinDashboardController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\DeviceTokenController;
+use App\Http\Controllers\Api\ConversationController;
 use App\Http\Controllers\Api\MessageController;
 
 /*
@@ -89,9 +91,12 @@ Route::middleware('auth:sanctum')->group(function () {
     | MedecinApiService.getCreneaux()   → GET    /api/medecin/creneaux?from=&to=
     | MedecinApiService.createCreneau() → POST   /api/medecin/creneaux
     |                                  → DELETE /api/medecin/creneaux/{id}
+    | WorkingTimePage                   → GET/PUT /api/medecin/working-time
     |------------------------------------------------------------------
     */
     Route::get('/medecin/creneaux',             [CreneauController::class, 'index']);
+    Route::get('/medecin/working-time', [MedecinWorkingTimeController::class, 'show']);
+    Route::put('/medecin/working-time', [MedecinWorkingTimeController::class, 'update']);
     Route::post('/medecin/creneaux',            [CreneauController::class, 'store']);
     Route::post('/medecin/creneaux/bulk',       [CreneauController::class, 'bulk']);
     Route::put('/medecin/creneaux/{id}',        [CreneauController::class, 'update']);
@@ -154,6 +159,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/device-token', [DeviceTokenController::class, 'remove']);
 
     // Messagerie instantanée — liée à un RDV
+    Route::get('/conversations', [ConversationController::class, 'index']);
     Route::get('/appointments/{id}/messages',              [MessageController::class, 'index']);
     Route::post('/appointments/{id}/messages',             [MessageController::class, 'store']);
     Route::get('/appointments/{id}/messages/unread-count', [MessageController::class, 'unreadCount']);
@@ -165,6 +171,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/patient/appointments/{id}/pay', [PatientAppointmentController::class, 'pay']);
 
     // Recherche et réservation côté patient
+    Route::get('/patient/doctors/autocomplete', [MedecinController::class, 'autocomplete']);
     Route::get('/patient/doctors', [MedecinController::class, 'index']);
     Route::get('/patient/doctors/{id}', [MedecinController::class, 'show']);
     Route::get('/patient/doctors/{id}/slots/{date}', [AppointmentController::class, 'patientSlots']);
@@ -180,6 +187,7 @@ Route::middleware('auth:sanctum')->group(function () {
     | AuthService.fetchDoctors() → GET /api/medecins[?specialite=&search=]
     |------------------------------------------------------------------
     */
+    Route::get('/medecins/autocomplete', [MedecinController::class, 'autocomplete']);
     Route::get('/medecins',      [MedecinController::class, 'index']);
     Route::get('/medecins/{id}', [MedecinController::class, 'show']);
 
@@ -212,7 +220,7 @@ Route::middleware('auth:sanctum')->group(function () {
     |------------------------------------------------------------------
     */
     Route::post('/admin/validate-medecin/{id}', [AdminController::class, 'validateMedecin']);
-    Route::get('/admin/pending-medecins',        [AdminController::class, 'getPendingMedecins']);
+    Route::get('/admin/pending-medecins',        [AdminController::class, 'getPendingMedecins']);//voire les médecins non validés
 });
 
 /*

@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Administration · Plaidoyer Santé</title>
+    <title>Administration · MOB-MEDHEALTH CARE SERVICES</title>
     <style>
         body { margin: 0; font-family: Segoe UI, sans-serif; background: #F4F8FB; color: #1F2933; }
         header { background: #107ACA; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
@@ -31,7 +31,7 @@
 </head>
 <body>
     <header>
-        <h1>Plaidoyer Santé — Administration</h1>
+        <h1>MOB-MEDHEALTH CARE SERVICES — Administration</h1>
         <form method="POST" action="{{ route('admin.logout') }}">
             @csrf
             <button type="submit">Déconnexion</button>

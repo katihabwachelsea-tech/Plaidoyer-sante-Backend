@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Admin · Plaidoyer Santé</title>
+    <title>Admin · MOB-MEDHEALTH CARE SERVICES</title>
     <style>
         body { margin: 0; font-family: Segoe UI, sans-serif; background: #F4F8FB; color: #1F2933; }
         .wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -20,17 +20,16 @@
     <div class="wrap">
         <form class="card" method="POST" action="{{ route('admin.login.submit') }}">
             @csrf
-            <h1>Plaidoyer Santé</h1>
+            <h1>MOB-MEDHEALTH CARE SERVICES</h1>
             <p>Administration — validation des médecins et tarifs.</p>
             @if ($errors->any())
                 <div class="error">{{ $errors->first() }}</div>
             @endif
             <label for="email">Email</label>
-            <input id="email" name="email" type="email" value="{{ old('email', 'admin@plaidoyersante.bi') }}" required>
+            <input id="email" name="email" type="email" value="{{ old('email') }}" required>
             <label for="password">Mot de passe</label>
             <input id="password" name="password" type="password" required>
             <button type="submit">Se connecter</button>
-            <p style="margin-top:16px;font-size:13px;">Démo : admin@plaidoyersante.bi · password123</p>
         </form>
     </div>
 </body>

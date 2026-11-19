@@ -26,19 +26,24 @@ class MedecinDashboardController extends Controller
         $today = Carbon::today();
         $weekEnd = Carbon::today()->addDays(7);
 
-        $todayCount = Appointment::where('medecin_id', $medecinId)
-            ->where('statut', 'Confirme')
+        // Carte 1 "En attente" : demandes non encore traitées du jour
+        $todayPendingCount = Appointment::where('medecin_id', $medecinId)
             ->whereDate('date_rdv', $today)
+            ->where('statut', 'En_attente')
             ->count();
 
-        // À venir = après aujourd'hui (ne pas double-compter les RDV du jour)
+        // Carte 2 "Confirmés / Payés" : TOUS les RDV Confirme (passés + futurs)
         $upcomingCount = Appointment::where('medecin_id', $medecinId)
             ->where('statut', 'Confirme')
-            ->whereDate('date_rdv', '>', $today)
+            ->count();
+
+        // Carte "Terminé" : consultations effectuées (RDV avec statut Termine)
+        $termineCount = Appointment::where('medecin_id', $medecinId)
+            ->where('statut', 'Termine')
             ->count();
 
         $patientsCount = Appointment::where('medecin_id', $medecinId)
-            ->whereIn('statut', ['Confirme', 'Termine'])
+            ->whereIn('statut', ['Accepte', 'Confirme', 'Termine'])
             ->selectRaw('COUNT(DISTINCT patient_id) as aggregate')
             ->value('aggregate') ?? 0;
 
@@ -54,7 +59,7 @@ class MedecinDashboardController extends Controller
 
         $next = Appointment::with('patient.user')
             ->where('medecin_id', $medecinId)
-            ->where('statut', 'Confirme')
+            ->whereIn('statut', ['Accepte', 'Confirme'])
             ->where('date_rdv', '>=', now())
             ->orderBy('date_rdv')
             ->first();
@@ -63,8 +68,9 @@ class MedecinDashboardController extends Controller
             'status' => true,
             'data'   => [
                 'nom'                 => $user->nom,
-                'today_count'         => $todayCount,
+                'today_count'         => $todayPendingCount,
                 'upcoming_count'      => $upcomingCount,
+                'termine_count'       => $termineCount,
                 'patients_count'      => $patientsCount,
                 'creneaux_week_count' => $creneauxCount,
                 'consultations_count' => $consultationsCount,
@@ -73,6 +79,7 @@ class MedecinDashboardController extends Controller
                     'date_rdv'    => $next->date_rdv?->format('Y-m-d H:i:s'),
                     'motif'       => $next->motif,
                     'patient_nom' => $next->patient?->user?->nom,
+                    'statut'      => $next->statut,
                 ] : null,
             ],
         ]);

@@ -77,11 +77,22 @@ class PatientController extends Controller
             return response()->json(['status' => false, 'message' => 'Patient introuvable.'], 404);
         }
 
+        $hasAppointmentWithDoctor = \App\Models\Appointment::where('patient_id', $patientId)
+            ->where('medecin_id', $authUser->id)
+            ->exists();
+
+        if (! $hasAppointmentWithDoctor) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Ce patient ne fait pas partie de votre suivi.',
+            ], 403);
+        }
+
         // Toutes les consultations de ce patient (ordonnées par date desc)
         $consultations = \App\Models\Consultation::whereHas('appointment', function ($q) use ($patientId) {
             $q->where('patient_id', $patientId);
         })
-        ->with(['appointment.medecin.user', 'appointment.service'])
+        ->with(['appointment.medecin.user', 'appointment.service', 'appointment.invoice'])
         ->orderBy('date_consultation', 'desc')
         ->get();
 
@@ -114,6 +125,7 @@ class PatientController extends Controller
             return [
                 'id'                      => $c->id,
                 'appointment_id'          => $c->appointment_id,
+                'appointment'             => $c->appointment,
                 'date_consultation'       => optional($c->date_consultation)->toIso8601String(),
                 'diagnostic'              => $c->diagnostic,
                 'ordonnance'              => $c->ordonnance,

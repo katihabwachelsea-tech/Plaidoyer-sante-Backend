@@ -8,6 +8,7 @@ use App\Models\Appointment;
 use App\Models\Creneau;
 use App\Models\Invoice;
 use App\Models\Service;
+use App\Services\WorkingTimeAvailability;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -71,10 +72,13 @@ class PatientAppointmentController extends Controller
         $time = $slot->format('H:i');
 
         // Le médecin doit avoir publié ce créneau (pas de slots inventés)
-        $published = Creneau::where('medecin_id', $validated['medecin_id'])
-            ->whereDate('date', $date)
-            ->where('disponible', true)
-            ->get();
+        $published = app(WorkingTimeAvailability::class)
+            ->ensureDateSlots((int) $validated['medecin_id'], $date)
+            ?? Creneau::where('medecin_id', $validated['medecin_id'])
+                ->whereDate('date', $date)
+                ->where('disponible', true)
+                ->get();
+        $published = $published->where('disponible', true);
 
         $matchedCreneau = $published->first(function ($creneau) use ($time) {
             return substr((string) $creneau->heure_debut, 0, 5) === $time;

@@ -14,7 +14,7 @@ class AdminSeeder extends Seeder
         User::firstOrCreate(
             ['email' => 'admin@plaidoyersante.bi'], // Condition de recherche
             [
-                'nom' => 'Admin Plaidoyer',
+                'nom' => 'Administrateur MOB-MEDHEALTH CARE SERVICES',
                 'password' => Hash::make('password123'),
                 'telephone' => '1234567890',
                 'role' => 'admin',

@@ -18,11 +18,13 @@ class Creneau extends Model
         'heure_debut',
         'heure_fin',
         'disponible',
+        'generated_by_working_time',
     ];
 
     protected $casts = [
-        'date'       => 'date',
+        'date' => 'date:Y-m-d',
         'disponible' => 'boolean',
+        'generated_by_working_time' => 'boolean',
     ];
 
     /**

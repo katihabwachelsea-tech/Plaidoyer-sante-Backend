@@ -9,6 +9,7 @@ use App\Models\Creneau;
 use App\Models\Invoice;
 use App\Models\Service;
 use App\Models\Medecin;
+use App\Services\WorkingTimeAvailability;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -167,8 +168,11 @@ class AppointmentController extends Controller
         }
 
         $count = Appointment::where('medecin_id', $user->id)
-            ->where('statut', 'Confirme')
             ->whereDate('date_rdv', Carbon::today())
+            ->where('statut', 'Confirme')
+            ->whereHas('invoice', function ($q) {
+                $q->where('statut_paiement', 'Paye');
+            })
             ->count();
 
         return response()->json([
@@ -204,12 +208,26 @@ class AppointmentController extends Controller
             ], 422);
         }
 
-        $appointment->update(['statut' => 'Accepte']);
+        // Générer un lien Jitsi automatiquement pour les téléconsultations
+        $meetingUrl = null;
+        if ($appointment->service && $appointment->service->mode === 'teleconsultation') {
+            $token      = bin2hex(random_bytes(8)); // 16 caractères aléatoires
+            $meetingUrl = 'https://meet.jit.si/mobclinic-' . $appointment->id . '-' . $token;
+        }
+
+        $appointment->update([
+            'statut'      => 'Accepte',
+            'meeting_url' => $meetingUrl,
+        ]);
+
+        $notifBody = $meetingUrl
+            ? 'Le Dr. '.$user->nom.' a accepté votre demande. Payez pour confirmer votre téléconsultation.'
+            : 'Le Dr. '.$user->nom.' a accepté votre demande. Vous pouvez maintenant procéder au paiement.';
 
         AppNotification::notify(
             (int) $appointment->patient_id,
             'Demande acceptée ✅',
-            'Le Dr. '.$user->nom.' a accepté votre demande. Vous pouvez maintenant procéder au paiement.',
+            $notifBody,
             'appointment_accepted',
             ['appointment_id' => $appointment->id]
         );
@@ -345,11 +363,12 @@ class AppointmentController extends Controller
             ->map(fn ($app) => Carbon::parse($app->date_rdv)->format('H:i'))
             ->toArray();
 
-        // Inclure aussi disponible=false pour afficher les slots occupés comme unavailable
-        $published = Creneau::where('medecin_id', $medecinId)
-            ->whereDate('date', $date)
-            ->orderBy('heure_debut')
-            ->get();
+        // Recurring schedules are materialized only for the requested date.
+        $published = app(WorkingTimeAvailability::class)->ensureDateSlots((int) $medecinId, $date)
+            ?? Creneau::where('medecin_id', $medecinId)
+                ->whereDate('date', $date)
+                ->orderBy('heure_debut')
+                ->get();
 
         $slots = [];
         foreach ($published as $creneau) {
